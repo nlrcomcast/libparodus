@@ -44,6 +44,7 @@
 
 #define URL_SIZE 32
 
+void libpd_log1(int level, const char *msg, ...);
 
 typedef struct {
 	int run_state;
@@ -148,7 +149,7 @@ err_table_item_t error_msg_table[] = {
 
 #define NUM_ERROR_MSGS ( (sizeof error_msg_table) / sizeof(err_table_item_t) )
 
-
+char Service_Name[128]={0};
 const char *libparodus_strerror (libpd_error_t err)
 {
 	unsigned i;
@@ -339,12 +340,14 @@ int connect_sender (const char *send_url, int *oserr)
 	if (sock < 0) {
 		*oserr = errno;
 		libpd_log_err (LEVEL_ERROR, errno, ("Unable to create send socket: %s\n", send_url));
+		libpd_log1 (LEVEL_ERROR, "Unable to create send socket: %s\n", send_url);
  		return CONN_SEND_ERR_CREATE;
 	}
 	if (nn_setsockopt (sock, NN_SOL_SOCKET, NN_SNDTIMEO, 
 				&send_timeout, sizeof (send_timeout)) < 0) {
 		*oserr = errno;
 		libpd_log_err (LEVEL_ERROR, errno, ("Unable to set socket timeout: %s\n", send_url));
+		libpd_log1 (LEVEL_ERROR, "Unable to set socket timeout: %s\n", send_url);
 		shutdown_socket (&sock);
  		return CONN_SEND_ERR_SETOPT;
 	}
@@ -352,6 +355,7 @@ int connect_sender (const char *send_url, int *oserr)
 		*oserr = errno;
 		libpd_log_err (LEVEL_ERROR, errno, ("Unable to connect to send socket %s\n",
 			send_url));
+		libpd_log1 (LEVEL_ERROR, "Unable to connect to send socket %s\n",send_url);
 		shutdown_socket (&sock);
 		return CONN_SEND_ERR_CONN;
 	}
@@ -481,6 +485,7 @@ int libparodus_init_dbg (libpd_instance_t *instance, libpd_cfg_t *libpd_cfg,
 	// err_list->num_threads will now be 1
 	if (NULL == inst) {
 		libpd_log (LEVEL_ERROR, ("LIBPARODUS: unable to allocate new instance\n"));
+		libpd_log1 (LEVEL_ERROR, "LIBPARODUS: unable to allocate new instance\n");
 		SETERR (0, LIBPD_ERR_INIT_INST);
 		return LIBPD_ERROR_INIT_INST;
 	}
@@ -492,6 +497,7 @@ int libparodus_init_dbg (libpd_instance_t *instance, libpd_cfg_t *libpd_cfg,
 	show_options (libpd_cfg);
 	if (inst->cfg.receive) {
 		libpd_log (LEVEL_INFO, ("LIBPARODUS: connecting receiver to %s\n",  inst->client_url));
+		libpd_log1 (LEVEL_INFO, "LIBPARODUS: connecting receiver to %s\n",  inst->client_url);
 		err = connect_receiver (inst->client_url, inst->cfg.keepalive_timeout_secs, &oserr);
 		if (err < 0) {
 			SETERR(oserr, LIBPD_ERR_INIT_RCV + err); 
@@ -510,6 +516,8 @@ int libparodus_init_dbg (libpd_instance_t *instance, libpd_cfg_t *libpd_cfg,
 		inst->send_sock = err;
 		libpd_log (LEVEL_INFO, ("LIBPARODUS: connected sender to %s (%d)\n", 
 			inst->parodus_url, inst->send_sock));
+		libpd_log1 (LEVEL_INFO, "LIBPARODUS: connected sender to %s (%d)\n", 
+			inst->parodus_url, inst->send_sock);			
 	}
 	if (inst->cfg.receive) {
 		// We use the stop_rcv_sock to send a stop msg to our own receive socket.
@@ -521,6 +529,7 @@ int libparodus_init_dbg (libpd_instance_t *instance, libpd_cfg_t *libpd_cfg,
 		}
 		inst->stop_rcv_sock = err;
 		libpd_log (LEVEL_INFO, ("LIBPARODUS: Opened sockets\n"));
+		libpd_log1 (LEVEL_INFO, "LIBPARODUS: Opened sockets\n");		
 		err = libpd_qcreate (&inst->wrp_queue, inst->wrp_queue_name, WRP_QUEUE_SIZE, &oserr);
 		if (err != 0) {
 			abort_init (inst, ABORT_RCV_SOCK | ABORT_SEND_SOCK | ABORT_STOP_RCV_SOCK);
@@ -528,6 +537,7 @@ int libparodus_init_dbg (libpd_instance_t *instance, libpd_cfg_t *libpd_cfg,
 			return LIBPD_ERROR_INIT_QUEUE;
 		}
 		libpd_log (LEVEL_INFO, ("LIBPARODUS: Created queues\n"));
+		libpd_log1 (LEVEL_INFO, "LIBPARODUS: Created queues\n");
 		err = create_thread (&inst->wrp_receiver_tid, wrp_receiver_thread,
 				inst);
 		if (err != 0) {
@@ -552,6 +562,7 @@ int libparodus_init_dbg (libpd_instance_t *instance, libpd_cfg_t *libpd_cfg,
 
 	if (!inst->cfg.receive) {
 		libpd_log (LEVEL_DEBUG, ("LIBPARODUS: Init without receiver\n"));
+		libpd_log1 (LEVEL_DEBUG, "LIBPARODUS: Init without receiver\n");
 	}
 
 	if (need_to_send_registration) {
@@ -567,8 +578,11 @@ int libparodus_init_dbg (libpd_instance_t *instance, libpd_cfg_t *libpd_cfg,
 			return LIBPD_ERROR_INIT_REGISTER;
 		}
 		libpd_log (LEVEL_DEBUG, ("LIBPARODUS: Sent registration message\n"));
+		libpd_log1 (LEVEL_DEBUG, "LIBPARODUS: Sent registration message\n");
 	}
 	SETERR (0, 0);
+	strncpy(Service_Name,libpd_cfg->service_name,128);
+	libpd_log1(LEVEL_INFO,"%s",Service_Name);
 	return 0;
 }
 
@@ -586,13 +600,16 @@ static int sock_send (int sock, const char *msg, int msg_len, int *oserr)
 	if (msg_len < 0)
 		msg_len = strlen (msg) + 1; // include terminating null
 	bytes = nn_send (sock, msg, msg_len, 0);
+	libpd_log1(LEVEL_INFO,"nn_send: msg_len=%d no.of bytes sent=%d",msg_len,bytes);
   if (bytes < 0) {
 		*oserr = errno; 
 		libpd_log_err (LEVEL_ERROR, errno, ("Error sending msg\n"));
+		libpd_log1(LEVEL_ERROR,"Error sending msg");
 		return -0x40;
 	}
   if (bytes != msg_len) {
 		libpd_log (LEVEL_ERROR, ("Not all bytes sent, just %d\n", bytes));
+		libpd_log1(LEVEL_ERROR,"Not all bytes sent, just %d", bytes);
 		return -1;
 	}
 	return 0;
@@ -660,6 +677,7 @@ int libparodus_shutdown_dbg (libpd_instance_t *instance,
 
 	if (RUN_STATE_RUNNING != inst->run_state) {
 		libpd_log (LEVEL_DEBUG, ("LIBPARODUS: not running at shutdown\n"));
+		libpd_log1 (LEVEL_DEBUG, "LIBPARODUS: not running at shutdown\n");
 		err_info->err_detail = LIBPD_ERR_SHUTDOWN_STATE;
 		destroy_instance (instance);
 		return 0;
@@ -673,6 +691,7 @@ int libparodus_shutdown_dbg (libpd_instance_t *instance,
 int libparodus_shutdown (libpd_instance_t *instance)
 {
   extra_err_info_t err;
+  libpd_log1 (LEVEL_DEBUG, "LIBPARODUS: shutdown\n");
   return libparodus_shutdown_dbg (instance, &err);
 }
 
@@ -854,6 +873,7 @@ static int wrp_sock_send (__instance_t *inst, wrp_msg_t *msg, extra_err_info_t *
 	msg_len = wrp_struct_to (msg, WRP_BYTES, &msg_bytes);
 	if (msg_len < 1) {
 		libpd_log (LEVEL_ERROR, ("LIBPARODUS: error converting WRP to bytes\n"));
+		libpd_log1(LEVEL_ERROR,"LIBPARODUS: error converting WRP to bytes");
 		pthread_mutex_unlock (&inst->send_mutex);
 		return -0x1001;
 	}
@@ -869,7 +889,7 @@ static int wrp_sock_send (__instance_t *inst, wrp_msg_t *msg, extra_err_info_t *
 		}
 		inst->send_sock = rtn;
 	}
-
+	libpd_log1(LEVEL_INFO,"ParodusURL:%s msg_len=%d",inst->parodus_url,msg_len);
 	SST (sst_start_send_timing (&sst_times);)
 	rtn = sock_send (inst->send_sock, (const char *)msg_bytes, msg_len, 
 	    &err_info->oserr);
@@ -906,14 +926,17 @@ int libparodus_send_dbg (libpd_instance_t instance, wrp_msg_t *msg,
 	err_info->oserr = 0;
 	if (NULL == inst) {
 		libpd_log (LEVEL_ERROR, ("Null instance on libparodus_send\n"));
+		libpd_log1(LEVEL_ERROR,"Null instance on libparodus_send");
 		err_info->err_detail = LIBPD_ERR_SEND_NULL_INST;
 		return LIBPD_ERROR_SEND_NULL_INST;
 	}
 	if (RUN_STATE_RUNNING != inst->run_state) {
 		libpd_log (LEVEL_ERROR, ("LIBPARODUS: not running at send\n"));
+		libpd_log1(LEVEL_ERROR,"LIBPARODUS: not running at send");
 		err_info->err_detail = LIBPD_ERR_SEND_STATE;
 		return LIBPD_ERR_SEND_STATE;
 	}
+    libpd_log1(LEVEL_INFO,"parodus url:%s, msg type:%d",inst->parodus_url,msg->msg_type);
 	rtn = libparodus_send__ (instance, msg, err_info);
 	if (rtn == 0)
 		return 0;
@@ -927,6 +950,7 @@ int libparodus_send_dbg (libpd_instance_t instance, wrp_msg_t *msg,
 int libparodus_send (libpd_instance_t instance, wrp_msg_t *msg)
 {
   extra_err_info_t err;
+  libpd_log1(LEVEL_INFO,"webpa message received from onewifi");
   return libparodus_send_dbg (instance, msg, &err);
 }
 
@@ -1120,4 +1144,58 @@ void test_get_counts (libpd_instance_t instance,
 	*keep_alive_count = inst->keep_alive_count;
 	*reconnect_count = inst->reconnect_count;
 }
+#define MSG_BUF_SIZE 4096
+#define LOG_FILE "/tmp/libparodus_log.txt"
+void libpd_log1 ( int level, const char *msg, ...)
+{
+	char *pTempChar = NULL;
+	int buf_limit=0, nbytes=0;
+	
+	va_list arg_ptr; 
+	if(strcmp(Service_Name,"CcspWifiSsp"))
+	{
+		return;
+	}
+	pTempChar = (char *)malloc(MSG_BUF_SIZE);
+	if(pTempChar)
+	{
+		buf_limit = MSG_BUF_SIZE;
+		va_start(arg_ptr, msg); 
+		nbytes = vsnprintf(pTempChar, buf_limit, msg, arg_ptr);
+		if(nbytes < 0)
+		{
+			perror(pTempChar);
+		}
+		va_end(arg_ptr);
+		
+        FILE     *fp        = NULL;
+        fp = fopen ( LOG_FILE, "a+");
+        if (fp)
+        {
+                                            struct tm *tm_info;
+                                            struct timeval tv_now;
+                                            char tmp[128],time[150];
+                                            gettimeofday(&tv_now, NULL);
+                                            tm_info = (struct tm *)localtime(&tv_now.tv_sec);
 
+                                            strftime(tmp, 128, "%y%m%d-%T", tm_info);
+
+                                            snprintf(time, 150, "%s.%06lld", tmp, (long long)tv_now.tv_usec);			
+			if(level == LEVEL_ERROR)
+            fprintf(fp,"%s Error: %s\n",time,pTempChar);
+			if(level == LEVEL_INFO)
+            fprintf(fp,"%s Info: %s\n",time,pTempChar);
+			if(level == LEVEL_DEBUG)
+            fprintf(fp,"%s Debug: %s\n",time,pTempChar);						
+            fclose(fp);
+        }		
+	
+		if(pTempChar !=NULL)
+		{
+			free(pTempChar);
+			pTempChar = NULL;
+		}
+			
+	}
+	return;	
+}
