@@ -22,7 +22,7 @@
 #define LEVEL_ERROR 0
 #define LEVEL_INFO  1
 #define LEVEL_DEBUG 2
-
+void libpd_log1(int level, const char *msg, ...);
 // if TEST_ENVIRONMENT is not defined, then the macros libpd_log and libpd_log_err
 // generate nothing
 //#define TEST_ENVIRONMENT 1
